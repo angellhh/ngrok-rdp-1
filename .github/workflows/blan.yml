@@ -1,4 +1,4 @@
-name: Windows RDP via ngrok (Auto Print Address)
+name: Windows RDP via ngrok (Fixed)
 
 on:
   workflow_dispatch:
@@ -22,27 +22,46 @@ jobs:
         Expand-Archive ngrok.zip
 
     - name: Authenticate ngrok
-      run: |
-        .\ngrok\ngrok.exe config add-authtoken $env:NGROK_AUTH_TOKEN
       env:
         NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-
-    - name: Start ngrok TCP tunnel
       run: |
-        Start-Process -NoNewWindow -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp 3389"
-        Start-Sleep -Seconds 10
+        .\ngrok\ngrok.exe config add-authtoken $env:NGROK_AUTH_TOKEN
 
-    - name: Get ngrok TCP address
+    - name: Start ngrok TCP tunnel (with API enabled)
       run: |
-        $tunnels = Invoke-RestMethod -Uri http://127.0.0.1:4040/api/tunnels
+        Start-Process -NoNewWindow -FilePath ".\ngrok\ngrok.exe" `
+          -ArgumentList "tcp 3389 --web-addr=127.0.0.1:4040"
+
+    - name: Fetch ngrok TCP address
+      run: |
+        $api = "http://127.0.0.1:4040/api/tunnels"
+        $tunnels = $null
+
+        for ($i = 1; $i -le 15; $i++) {
+          try {
+            $tunnels = Invoke-RestMethod -Uri $api -TimeoutSec 2
+            break
+          } catch {
+            Start-Sleep -Seconds 2
+          }
+        }
+
+        if (-not $tunnels) {
+          Write-Error "ngrok API not reachable"
+          exit 1
+        }
+
         $tcp = $tunnels.tunnels | Where-Object { $_.proto -eq "tcp" }
+
         Write-Host "===================================="
         Write-Host "RDP CONNECTION DETAILS"
-        Write-Host "Address: $($tcp.public_url)"
+        Write-Host "Address : $($tcp.public_url)"
         Write-Host "Username: runneradmin"
         Write-Host "Password: StrongPassword123!"
         Write-Host "===================================="
 
     - name: Keep runner alive
       run: |
-        while (
+        while ($true) {
+          Start-Sleep -Seconds 300
+        }
